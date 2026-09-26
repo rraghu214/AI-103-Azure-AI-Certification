@@ -2364,28 +2364,33 @@ MAF is the open-source SDK for building agents in **code**, versus Agent Service
 
 ```python
 import asyncio
-from agent_framework import ChatAgent, HostedCodeInterpreterTool
-from agent_framework.azure import AzureAIAgentClient
-from azure.identity.aio import DefaultAzureCredential
+import os
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from azure.identity import DefaultAzureCredential
 
 async def main():
-    async with DefaultAzureCredential() as cred:
-        async with ChatAgent(
-            chat_client=AzureAIAgentClient(
-                project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),
-                model_deployment_name="gpt-4o",
-                async_credential=cred,
-            ),
-            instructions="You are a data analysis assistant.",
-            tools=[HostedCodeInterpreterTool()],
-        ) as agent:
-            response = await agent.run("Compute the mean of [4, 8, 15, 16, 23, 42].")
-            print(response.text)
+    client = FoundryChatClient(
+        project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),
+        model="gpt-4o",
+        credential=DefaultAzureCredential(),
+    )
+
+    agent = Agent(
+        client=client,
+        instructions="You are a data analysis assistant.",
+        tools=client.get_code_interpreter_tool(),   # provider-specific factory
+    )
+
+    response = await agent.run("Compute the mean of [4, 8, 15, 16, 23, 42].")
+    print(response)
 
 asyncio.run(main())
 ```
 
-Note the shape: `async with`, `await agent.run(...)`, and the async credential from `azure.identity.aio`. **MAF is async-first** — §0.6 is required reading before this section.
+Note the shape: `await agent.run(...)` and the sync `DefaultAzureCredential` passed to the client (not the `aio` variant). **MAF is async-first** — §0.6 is required reading before this section.
+
+> ⚡ **MAF 1.0 breaking changes from earlier previews.** `ChatAgent` was renamed to `Agent`. `HostedCodeInterpreterTool()` and similar standalone hosted-tool classes were replaced by client-factory methods (`client.get_code_interpreter_tool()`, `client.get_file_search_tool()`, etc.) so the framework can verify the provider actually supports the tool. `AzureAIAgentClient` was replaced by `FoundryChatClient` (for Foundry project inference). `model_deployment_name=` became `model=` and `async_credential=` became `credential=`. Study material that predates GA (3 April 2026) may show the old API.
 
 ### §2.7.3 Custom tools in MAF
 
@@ -2399,8 +2404,8 @@ def get_inventory(
     """Return current inventory count for a product SKU."""
     return f"{sku}: 42 units in stock"
 
-agent = ChatAgent(
-    chat_client=client,
+agent = Agent(
+    client=client,
     instructions="You help staff check stock levels.",
     tools=[get_inventory],          # plain function — schema inferred
 )
