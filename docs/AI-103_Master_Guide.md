@@ -1750,7 +1750,9 @@ response = client.chat.completions.create(
 )
 ```
 
-📊 | Need | Use |
+📊
+
+| Need | Use |
 |---|---|
 | Valid JSON, shape flexible | `json_object` (JSON mode) |
 | Exact schema conformance guaranteed | `json_schema` with `strict: True` |
@@ -2101,7 +2103,9 @@ response = client.chat.completions.create(
 citations = response.choices[0].message.context["citations"]
 ```
 
-📊 | | On Your Data | Manual RAG |
+📊
+
+| | On Your Data | Manual RAG |
 |---|---|---|
 | Code required | Minimal | Full pipeline |
 | Citations | Automatic | You build them |
@@ -2346,7 +2350,9 @@ MAF is the open-source SDK for building agents in **code**, versus Agent Service
               pip install agent-framework
 ```
 
-📊 | | Foundry Agent Service | Microsoft Agent Framework |
+📊
+
+| | Foundry Agent Service | Microsoft Agent Framework |
 |---|---|---|
 | Model | Managed service | Code library you run |
 | State | Microsoft hosts threads | You manage (or use Foundry hosting) |
@@ -2509,8 +2515,10 @@ A manager agent creates and continually revises a task list, coordinating sub-ag
 
 ### §2.9.1 The metric families
 
-📊 | Family | Metrics | Answers |
-|---|---|---|---|
+📊
+
+| Family | Metrics | Answers |
+|---|---|---|
 | **Quality (RAG)** | Groundedness, Relevance, Retrieval | Is the answer supported and on-topic? |
 | **Quality (general)** | Coherence, Fluency | Is it well-written? |
 | **Similarity** | Similarity, F1, BLEU, ROUGE, METEOR | How close to a reference answer? |
@@ -2653,7 +2661,9 @@ The objective names *memory, tool, and knowledge integration* explicitly. §2.6 
 
 ### §2.13.1 The three kinds of agent context
 
-📊 | Kind | Scope | Mechanism |
+📊
+
+| Kind | Scope | Mechanism |
 |---|---|---|
 | **Conversation memory** | Within one session | Thread message history |
 | **Persistent memory** | Across sessions, per user | External store keyed by user id |
@@ -2731,7 +2741,9 @@ The model evaluates and revises **its own output** before returning it.
 
 ### §2.14.2 The patterns
 
-📊 | Pattern | Mechanism | Use when |
+📊
+
+| Pattern | Mechanism | Use when |
 |---|---|---|
 | **Self-critique** | One model drafts, critiques, revises | Quality matters more than latency |
 | **Critic agent** | A *separate* agent reviews the first agent's output | Independent judgement reduces self-bias |
@@ -2814,7 +2826,9 @@ MAF Workflows support **checkpointing** and **human-in-the-loop** nodes — the 
 
 The objective calls out choosing among LLMs, small models, multimodal models, and code models.
 
-📊 | Model class | Choose when |
+📊
+
+| Model class | Choose when |
 |---|---|
 | **Large language model** (GPT-4o, GPT-5) | General reasoning, complex tasks |
 | **Reasoning model** (o-series) | Multi-step logic, maths, deduction — no CoT prompting needed |
@@ -3137,7 +3151,9 @@ Three *independent* analyses of the same input, results merged, with latency as 
 
 ## §3.1 The Domain 3 Map
 
-📊 | Requirement | Answer |
+📊
+
+| Requirement | Answer |
 |---|---|
 | Create an image from a text description | **gpt-image** series |
 | Create an image guided by a reference image | gpt-image **image-to-image** |
@@ -3393,7 +3409,9 @@ open("out.mp4", "wb").write(video.content)
 
 This is not an afterthought — it is explicitly in the objective and is where several Domain 3 questions live.
 
-📊 | Risk | Control |
+📊
+
+| Risk | Control |
 |---|---|
 | Impersonation of real people | Sora 2 blocks photorealistic depictions of real people |
 | Copyright / IP resemblance | Sora 2 blocks IP content; prompt-side moderation |
@@ -4011,7 +4029,9 @@ The objective separates these from ordinary sentiment.
 
 ### §4.2.4 LLM translation vs Translator
 
-📊 | | Azure Translator | LLM translation |
+📊
+
+| | Azure Translator | LLM translation |
 |---|---|---|
 | Languages | 100+ | Fewer, but strong on major pairs |
 | Cost at volume | Lower | Higher |
@@ -4056,7 +4076,9 @@ MULTIMODAL
 
 Purpose-built operations remain the right answer when the task is standard, the volume is high, or determinism is required.
 
-📊 | Capability | Returns |
+📊
+
+| Capability | Returns |
 |---|---|
 | **NER** | People, places, organisations, dates, quantities — with categories and confidence |
 | **PII detection** | Personal data entities **plus a redacted text string** |
@@ -4434,7 +4456,9 @@ The newest service, and one no AI-102 material covers. Expect questions on it.
 
 **What it is:** a unified extraction service across **documents, images, audio, and video** using a single analyzer definition. You describe the fields you want in a schema; it extracts them from whatever modality.
 
-📊 | | Document Intelligence | Content Understanding |
+📊
+
+| | Document Intelligence | Content Understanding |
 |---|---|---|
 | Input | Documents and forms | **Documents, images, audio, video** |
 | Configuration | Choose a prebuilt or train a model | Define a **field schema** |
@@ -4480,7 +4504,9 @@ graph LR
 
 ### §5.3.2 The five components
 
-📊 | Component | Role |
+📊
+
+| Component | Role |
 |---|---|
 | **Data source** | Where content lives — Blob, ADLS Gen2, SQL, Cosmos DB, SharePoint, Table Storage |
 | **Indexer** | Crawler. Pulls content, runs the skillset, populates the index. Schedulable. |
