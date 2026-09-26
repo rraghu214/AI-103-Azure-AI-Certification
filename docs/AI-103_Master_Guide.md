@@ -2395,14 +2395,24 @@ Note the shape: `await agent.run(...)` and the sync `DefaultAzureCredential` pas
 ### §2.7.3 Custom tools in MAF
 
 ```python
+import os
 from typing import Annotated
 from pydantic import Field
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient
+from azure.identity import DefaultAzureCredential
 
 def get_inventory(
     sku: Annotated[str, Field(description="Product SKU, e.g. 'SKU-991'")]
 ) -> str:
     """Return current inventory count for a product SKU."""
     return f"{sku}: 42 units in stock"
+
+client = FoundryChatClient(
+    project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),
+    model="gpt-4o",
+    credential=DefaultAzureCredential(),
+)
 
 agent = Agent(
     client=client,
@@ -4129,6 +4139,7 @@ for doc in client.recognize_pii_entities(
 | Pronunciation assessment | Audio → fluency and accuracy scores |
 
 ```python
+import os
 import azure.cognitiveservices.speech as speechsdk
 
 cfg = speechsdk.SpeechConfig(subscription=os.getenv("SPEECH_KEY"),
@@ -4402,16 +4413,18 @@ Document Intelligence, Content Understanding, and Azure AI Search. This domain a
 
 ```python
 import os
-from azure.ai.formrecognizer import DocumentAnalysisClient
+from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.core.credentials import AzureKeyCredential
 
-client = DocumentAnalysisClient(
+client = DocumentIntelligenceClient(
     endpoint=os.getenv("DOCUMENT_INTELLIGENCE_ENDPOINT"),
     credential=AzureKeyCredential(os.getenv("DOCUMENT_INTELLIGENCE_KEY")),
 )
 
 with open("invoice.pdf", "rb") as f:                 # §0.4 binary mode
-    poller = client.begin_analyze_document("prebuilt-invoice", document=f)
+    poller = client.begin_analyze_document(
+        "prebuilt-invoice", body=f, content_type="application/octet-stream"
+    )
 
 result = poller.result()                             # §0.5 MUST call .result()
 
