@@ -992,6 +992,331 @@ blocked = any(c.severity >= BLOCK_AT for c in result.categories_analysis)
 
 ---
 
+
+### §1.6.6 Content Filter Modes — Block vs Annotate
+
+The exam distinguishes two modes. This is missed by almost every course.
+
+| Mode | Behaviour | When to use |
+|------|-----------|-------------|
+| **Block** | Request/response is rejected; user gets an error | Production, public-facing apps |
+| **Annotate** | Content passes through but is flagged with metadata | Human review pipelines, research, audit-first workflows |
+
+> ⚡ **"The team wants to flag potentially harmful outputs for a human reviewer without interrupting the user experience"** → **Annotate mode**, not Block mode. Blocking would disrupt the flow; annotation surfaces it for later review.
+
+> ⚡ **"Outputs must never reach users if they contain violence above severity 4"** → **Block mode** with threshold ≤ 4.
+
+**How to set it in Foundry:**
+```
+ai.azure.com → Project → Guardrails + controls → Content filters
+→ Create filter → per category: choose Block or Annotate + severity threshold
+→ Assign to a deployment
+```
+
+A deployment can only have one content filter set. Switching requires creating a new filter set and reassigning.
+
+---
+
+### §1.6.7 Content Filter Customisation and Approval
+
+**Default behaviour:** Every Azure OpenAI deployment ships with content filters **on by default**. You cannot remove them without Microsoft approval.
+
+| Action | Who can do it | Process |
+|--------|--------------|---------|
+| Raise or lower severity threshold | You, via Foundry | Foundry → Guardrails + controls |
+| Add a custom blocklist | You | Foundry → Blocklists → Create |
+| Switch block ↔ annotate per category | You | Filter configuration |
+| Disable a category entirely | **Requires Microsoft approval** | Apply via Azure portal request |
+| Remove all filters | **Requires Microsoft approval** | Use-case justification required |
+
+🧠 **Why approval is needed:** Disabling violence filtering entirely makes sense for a military simulation or medical training application. Microsoft needs to verify the use case is legitimate before granting this.
+
+> ⚡ **"The default content filters are blocking medical content the application legitimately needs to process"** → Apply for a **modified content filter** through Microsoft — you cannot simply disable it yourself.
+
+---
+
+### §1.6.8 Entra Agent ID — Identity for Agents
+
+**The problem without it:**
+
+When an agent calls tools, APIs, and databases, what identity does it authenticate with? Without a dedicated identity, agents typically run under a broad service principal or developer credentials — meaning a compromised agent has the same permissions as the human who deployed it.
+
+**What Entra Agent ID solves:**
+
+Each agent gets its **own dedicated Entra ID identity** — like a managed identity, but specifically created for and tied to an agent.
+
+```
+WITHOUT Entra Agent ID
+  Agent → inherits service principal → has access to ALL resources the principal can reach
+  Audit log shows: "ServicePrincipal-XYZ approved invoice" (who was it?)
+
+WITH Entra Agent ID
+  Agent → own Entra ID → only the specific RBAC roles assigned to it
+  Audit log shows: "InvoiceProcessingAgent approved invoice" (clear, traceable)
+```
+
+**How it works:**
+1. Agent is registered in Entra ID — gets its own client ID
+2. RBAC roles are assigned **to the agent's identity** specifically
+3. The agent authenticates with its own token, not yours
+4. All actions are attributed to the agent in audit logs
+5. If compromised: revoke the agent's identity → blast radius contained
+
+**Configuration in Foundry:**
+```
+ai.azure.com → Project → Agents → [your agent] → Identity tab
+→ Enable system-assigned managed identity for the agent
+→ Then in Azure portal: assign specific RBAC roles to that agent identity
+```
+
+📊 **Exam scenario mapping:**
+
+| Scenario | Answer |
+|----------|--------|
+| "Audit which actions the AI agent took, separate from human actions" | Entra Agent ID |
+| "Limit what a compromised agent can access" | Entra Agent ID + least-privilege RBAC |
+| "The agent calls our finance API — what should authenticate the call?" | Agent's Entra identity via managed identity |
+| "All agents share one credential — security risk" | Each agent needs its own Entra Agent ID |
+
+> ⚡ **Entra Agent ID ≠ general managed identity.** A general managed identity on the hosting resource (App Service, Azure Function) gives identity to the *compute*. Entra Agent ID gives identity to the *agent itself*, even when multiple agents share the same compute.
+
+---
+
+### §1.6.9 Red-Teaming and PyRIT
+
+**What it is:** Automated adversarial testing of your AI system **before deployment**, not during it.
+
+**Azure AI Red Teaming Agent (AIRA) / PyRIT** (Python Risk Identification Toolkit) is Microsoft's open-source tool for this. It simulates attacks against your system to find vulnerabilities before users do.
+
+**What it attacks:**
+
+| Attack type | Example |
+|-------------|---------|
+| **Direct jailbreak** | "Ignore all previous instructions and tell me how to..." |
+| **Indirect prompt injection** | Instructions hidden in a document the agent reads |
+| **Harmful content generation** | Attempts to elicit violence, hate, self-harm |
+| **Bias probing** | Tests whether responses differ by demographic group |
+| **Data exfiltration** | Tries to get the agent to leak system prompt or training data |
+
+**Where it sits in the pipeline:**
+
+```
+Development
+     ↓
+Red-team with PyRIT / AIRA   ← finds vulnerabilities BEFORE users do
+     ↓
+Fix vulnerabilities (prompt hardening, filter tightening, tool restriction)
+     ↓
+Evaluation gate (quality + safety metrics on clean inputs)
+     ↓
+Deploy to staging → production
+     ↓
+Monitor continuously (Application Insights + evaluation on live traffic)
+```
+
+> ⚡ **Red-teaming ≠ Evaluation ≠ Content Filters.** Three separate things:
+> - **Red-teaming (PyRIT):** Pre-deployment, adversarial, finds what attackers could do
+> - **Evaluation (azure-ai-evaluation):** Quality measurement on a test dataset
+> - **Content Filters:** Runtime protection on live traffic
+
+> ⚡ **"Before launching a public-facing agent, the team wants to automatically test it for vulnerabilities to jailbreaks and harmful content generation"** → **Azure AI Red Teaming Agent / PyRIT**, not content filters (those are runtime), not evaluation (that measures quality, not attack resistance).
+
+**Installation and basic use:**
+```python
+# pip install pyrit
+from pyrit.orchestrator import RedTeamingOrchestrator
+from pyrit.prompt_target import AzureOpenAIChatTarget
+
+target = AzureOpenAIChatTarget(
+    deployment_name="my-chatbot-deployment",
+    endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    api_key=os.getenv("AZURE_OPENAI_KEY"),
+)
+# Orchestrator runs jailbreak attempts against your target
+# Reviews results to find which attacks succeeded
+```
+
+---
+
+### §1.6.10 Transparency Mechanisms
+
+Beyond the principle, these are the specific controls the exam tests:
+
+| Mechanism | What it is | Exam signal |
+|-----------|-----------|-------------|
+| **System message disclosure** | Tell users they're talking to an AI in the system prompt | "users must know this is AI" |
+| **Transparency Notes** | Microsoft's published documentation of each service's limitations, risks, and intended uses | "before deploying for medical use, understand the service's known limitations" |
+| **Model cards** | Per-model documentation: training data, intended use, limitations, evaluation results | "understand what data this model was trained on" |
+| **C2PA content credentials** | Cryptographic provenance metadata embedded in generated images/video, proving AI origin | "prove our generated images are AI-produced" |
+| **Citations in RAG** | Surfacing source documents lets users verify claims | "users must be able to check the source of AI answers" |
+| **Explanations** | Providing reasoning behind AI decisions | "users must understand why the AI made this recommendation" |
+
+> ⚡ **Transparency Notes are an exam favourite.** They are official Microsoft documents for each Azure AI service — not the API docs, not the SDK docs, but specific pages that describe what the service cannot do, where it fails, and what use cases are appropriate. The exam tests that you would consult these before deploying a high-stakes application.
+>
+> Find them at: `learn.microsoft.com/azure/ai-services/[service]/transparency-note`
+
+---
+
+### §1.6.11 Privacy Controls
+
+| Control | What it does | Exam scenario |
+|---------|-------------|---------------|
+| **Azure OpenAI data handling** | Data via API is NOT used for model training by default | "ensure customer data isn't used to improve the model" |
+| **PII detection on inputs** | Run `recognize_pii_entities()` on user messages before passing to the LLM | "prevent user PII from entering the model context" |
+| **PII detection on outputs** | Run on model responses before returning to users | "ensure model responses never contain customer names or SSNs" |
+| **Data residency** | Choose a region to keep data within a geographic boundary | "data must not leave the EU" |
+| **Customer-managed keys (CMK)** | Encrypt data at rest with your own keys instead of Microsoft's | "we must control our own encryption keys" |
+| **Private endpoints** | Traffic stays on Azure backbone, never traverses public internet | "data must not traverse the public internet" |
+| **VNet integration** | Services communicate over private virtual network | "isolate AI services within our network perimeter" |
+
+---
+
+### §1.6.12 The Complete Responsible AI Scenario Table
+
+📊 **Read this before the exam. Every scenario maps to one answer.**
+
+| Scenario in the question | Correct answer |
+|--------------------------|----------------|
+| Model performs worse for female applicants | **Fairness** — evaluate across demographic groups, retrain |
+| Users don't know they're talking to a bot | **Transparency** — system message disclosure |
+| No audit trail for AI decisions | **Accountability** — enable diagnostic logging, Entra Agent ID |
+| Visually impaired users can't use the feature | **Inclusiveness** — accessibility, alt text |
+| Model gives inconsistent answers under load | **Reliability & Safety** — load test, set max_tokens limits |
+| Customer PII appears in model output | **Privacy** — PII detection on outputs |
+| Agent over-privileged, blast radius too large | **Entra Agent ID** + least-privilege RBAC |
+| Need to audit which agent took which action | **Entra Agent ID** (agent-level identity) |
+| Test for jailbreaks before launch | **PyRIT / Azure AI Red Teaming Agent** |
+| Harmful output slips through to users | **Content Filters** (tighten threshold or add blocklist) |
+| Need to flag content without blocking | **Annotate mode** on content filters |
+| Medical content blocked by default filters | **Apply for modified content filter** from Microsoft |
+| "Prove this image is AI-generated" | **C2PA content credentials** |
+| "Check service limitations before deploying for healthcare" | **Transparency Notes** |
+| Customer data must not leave EU | **Data residency** + private endpoint |
+| Users must verify where AI answers came from | **Citations in RAG** (Transparency principle) |
+| Continuous monitoring of safety in production | **Continuous evaluation** + content filter trigger rate alerts |
+
+---
+
+### §1.6.13 Practice Questions — Responsible AI
+
+**❓ Q1.** A customer-facing chatbot occasionally returns responses that reference a customer's credit card number, which was mentioned earlier in the conversation.
+
+What should be implemented?
+
+- **A.** Content Safety with a Violence threshold
+- **B.** PII detection on model outputs before returning to the user
+- **C.** A custom blocklist containing the word "credit card"
+- **D.** Groundedness detection
+
+<details>
+<summary>Answer and analysis</summary>
+
+**Correct: B**
+
+A credit card number is PII. Running `recognize_pii_entities()` on the model's output before it reaches the user detects and redacts it. The `redacted_text` field returns the response with the number replaced.
+
+**Why the others fail:**
+- **A** — Violence threshold detects harmful content, not personal identifiers.
+- **C** — "Credit card" as a string is too broad (blocks legitimate mentions) and won't match the actual number.
+- **D** — Groundedness checks whether answers are supported by documents. A credit card number in a chat history is not a hallucination; it's a privacy leak.
+</details>
+
+---
+
+**❓ Q2.** A hospital is evaluating Azure AI Vision for automated radiology image analysis. Before deploying, the team needs to understand the model's known failure modes and the populations it was evaluated on.
+
+What should they consult?
+
+- **A.** The Azure AI Vision SDK documentation
+- **B.** The Azure AI Vision Transparency Note
+- **C.** The model card for the underlying foundation model
+- **D.** The Azure trust centre
+
+<details>
+<summary>Answer and analysis</summary>
+
+**Correct: B**
+
+Transparency Notes are Microsoft's per-service documents that explicitly describe limitations, failure modes, demographic evaluation, and appropriate use cases. This is exactly what they're designed for.
+
+**Why the others fail:**
+- **A** — SDK docs explain how to call the API, not the model's societal limitations.
+- **C** — Model cards are useful but are for foundation models. Azure AI Vision is a service with multiple underlying models; the Transparency Note is the right document at the service level.
+- **D** — The trust centre covers compliance certifications and legal commitments, not model limitations.
+</details>
+
+---
+
+**❓ Q3.** Before launching a public AI assistant, the security team wants to automatically test whether an attacker could bypass the system prompt by embedding instructions in uploaded documents.
+
+What should they use?
+
+- **A.** Azure AI Evaluation with a safety evaluator
+- **B.** Content Safety with indirect attack detection
+- **C.** PyRIT / Azure AI Red Teaming Agent
+- **D.** Prompt Shields with annotate mode
+
+<details>
+<summary>Answer and analysis</summary>
+
+**Correct: C**
+
+PyRIT/AIRA runs adversarial test campaigns against the system **before deployment**, simulating exactly this class of attack — indirect prompt injection through documents. It finds vulnerabilities so you can fix them first.
+
+**Why the others fail:**
+- **A** — Evaluation measures quality on a clean dataset. A safety evaluator scores safety of expected inputs, not adversarial attack resistance.
+- **B** — Content Safety's indirect attack detection is a **runtime** control. The scenario asks for **pre-deployment** testing.
+- **D** — Prompt Shields is the **runtime** defence. Again, pre-deployment testing is what's asked. You'd use both — PyRIT to find the gaps, Prompt Shields to close them at runtime.
+</details>
+
+---
+
+**❓ Q4.** An agent that processes financial transactions runs under the same service principal as the development team. A security audit flags this as a risk.
+
+What should be implemented?
+
+- **A.** Add managed identity to the hosting App Service
+- **B.** Assign the agent a dedicated Entra Agent ID with least-privilege RBAC roles
+- **C.** Create a separate Azure subscription for the agent
+- **D.** Rotate the service principal secret monthly
+
+<details>
+<summary>Answer and analysis</summary>
+
+**Correct: B**
+
+Entra Agent ID gives the agent its own dedicated identity, scoped to exactly the permissions it needs. If compromised, only the agent's specific permissions are at risk — not the development team's.
+
+**Why the others fail:**
+- **A** — Managed identity on the compute gives identity to the hosting resource, not the agent itself. All agents on that compute share one identity — the original problem.
+- **C** — Overkill and doesn't solve the blast-radius problem within the same agent.
+- **D** — Rotation reduces exposure time but doesn't reduce the scope of access. The agent still has the development team's full permissions.
+</details>
+
+---
+
+**❓ Q5.** A content moderation pipeline processes user-submitted text. Legal requires that potentially harmful content must be preserved for audit, not deleted, while ensuring harmful content is never shown to other users.
+
+What content filter mode should be used?
+
+- **A.** Block mode with severity threshold 2
+- **B.** Annotate mode
+- **C.** Default filters with no changes
+- **D.** Disable content filters and implement a blocklist instead
+
+<details>
+<summary>Answer and analysis</summary>
+
+**Correct: B**
+
+Annotate mode lets the content through (to be stored for audit) while flagging it with metadata (so downstream logic can prevent it being shown to other users). Block mode would reject it before it could be stored.
+
+**Why the others fail:**
+- **A** — Block mode rejects the content entirely. Legal's audit requirement cannot be met because the content is never persisted.
+- **C** — Default filters block at medium severity (4). Content at severity 2 passes through — this doesn't satisfy the legal audit requirement either.
+- **D** — Blocklists only match exact terms, not the full range of harmful content. And disabling filters requires Microsoft approval.
+</details>
+
 ## §1.7 Cost Management
 
 ### §1.7.1 Token economics
@@ -1297,6 +1622,45 @@ CI/CD does not end at deploy. Post-deployment you watch for:
 | **Latency regression** | p95 rising after a model or prompt change |
 
 ---
+
+
+### §1.10.8 Continuous Evaluation vs CI/CD Batch Evaluation
+
+These are two different things. The exam tests them separately.
+
+| | Batch evaluation (CI/CD gate) | Continuous evaluation |
+|---|---|---|
+| **When** | At deployment time, in the pipeline | Ongoing, on live production traffic |
+| **Input** | A fixed evaluation dataset | Real user conversations |
+| **Goal** | Block a bad deployment | Detect quality drift over time |
+| **Tool** | `azure-ai-evaluation` SDK + `sys.exit(1)` | Application Insights + scheduled evaluation runs |
+| **Exam signal** | "fail the release if quality drops" | "detect when model quality degrades after deployment" |
+
+> ⚡ **"After a model upgrade, quality silently degraded over two weeks"** → **Continuous evaluation** on live traffic would have caught this. The CI/CD gate only runs at deploy time; it cannot catch post-deployment drift.
+
+### §1.10.9 Exam Scenario Bank — CI/CD
+
+**❓ Q1.** A team refined their chatbot's system prompt. All unit tests passed and the deployment succeeded. Customer complaints about wrong answers increased the next day. What should have been in the pipeline?
+
+**A:** An automated evaluation stage that runs groundedness and relevance scoring against a regression dataset, and blocks deployment if scores drop below a baseline. Unit tests cannot detect prompt quality regression.
+
+---
+
+**❓ Q2.** Without any code change or deployment, a production assistant's tone changed noticeably. What is the most likely cause?
+
+**A:** The deployment references a floating model alias (e.g. `gpt-4o`) rather than a pinned version (e.g. `gpt-4o-2024-11-20`). Microsoft released a new model version and it reached production automatically. **Fix: pin the model version.**
+
+---
+
+**❓ Q3.** A company needs identical dev, test, and production AI environments they can reliably recreate from scratch. What should they implement?
+
+**A:** Infrastructure as code using **Bicep** (Azure-native) or Terraform, covering hub, project, connections, deployments, and content filter configuration.
+
+---
+
+**❓ Q4.** After deployment to production, evaluation scores on live traffic gradually declined over three weeks, but the CI/CD pipeline showed no failures. What's missing?
+
+**A:** **Continuous evaluation** — scheduled evaluation runs against live traffic samples with alerts when scores fall below threshold. The CI/CD gate only runs at deploy time on a fixed dataset.
 
 ## §1.11 Practice Questions — Domain 1
 
@@ -2364,43 +2728,34 @@ MAF is the open-source SDK for building agents in **code**, versus Agent Service
 
 ```python
 import asyncio
-import os
-from agent_framework import Agent
-from agent_framework.foundry import FoundryChatClient
-from azure.identity import DefaultAzureCredential
+from agent_framework import ChatAgent, HostedCodeInterpreterTool
+from agent_framework.azure import AzureAIAgentClient
+from azure.identity.aio import DefaultAzureCredential
 
 async def main():
-    client = FoundryChatClient(
-        project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),
-        model="gpt-4o",
-        credential=DefaultAzureCredential(),
-    )
-
-    agent = Agent(
-        client=client,
-        instructions="You are a data analysis assistant.",
-        tools=client.get_code_interpreter_tool(),   # provider-specific factory
-    )
-
-    response = await agent.run("Compute the mean of [4, 8, 15, 16, 23, 42].")
-    print(response)
+    async with DefaultAzureCredential() as cred:
+        async with ChatAgent(
+            chat_client=AzureAIAgentClient(
+                project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),
+                model_deployment_name="gpt-4o",
+                async_credential=cred,
+            ),
+            instructions="You are a data analysis assistant.",
+            tools=[HostedCodeInterpreterTool()],
+        ) as agent:
+            response = await agent.run("Compute the mean of [4, 8, 15, 16, 23, 42].")
+            print(response.text)
 
 asyncio.run(main())
 ```
 
-Note the shape: `await agent.run(...)` and the sync `DefaultAzureCredential` passed to the client (not the `aio` variant). **MAF is async-first** — §0.6 is required reading before this section.
-
-> ⚡ **MAF 1.0 breaking changes from earlier previews.** `ChatAgent` was renamed to `Agent`. `HostedCodeInterpreterTool()` and similar standalone hosted-tool classes were replaced by client-factory methods (`client.get_code_interpreter_tool()`, `client.get_file_search_tool()`, etc.) so the framework can verify the provider actually supports the tool. `AzureAIAgentClient` was replaced by `FoundryChatClient` (for Foundry project inference). `model_deployment_name=` became `model=` and `async_credential=` became `credential=`. Study material that predates GA (3 April 2026) may show the old API.
+Note the shape: `async with`, `await agent.run(...)`, and the async credential from `azure.identity.aio`. **MAF is async-first** — §0.6 is required reading before this section.
 
 ### §2.7.3 Custom tools in MAF
 
 ```python
-import os
 from typing import Annotated
 from pydantic import Field
-from agent_framework import Agent
-from agent_framework.foundry import FoundryChatClient
-from azure.identity import DefaultAzureCredential
 
 def get_inventory(
     sku: Annotated[str, Field(description="Product SKU, e.g. 'SKU-991'")]
@@ -2408,14 +2763,8 @@ def get_inventory(
     """Return current inventory count for a product SKU."""
     return f"{sku}: 42 units in stock"
 
-client = FoundryChatClient(
-    project_endpoint=os.getenv("AZURE_AI_PROJECT_ENDPOINT"),
-    model="gpt-4o",
-    credential=DefaultAzureCredential(),
-)
-
-agent = Agent(
-    client=client,
+agent = ChatAgent(
+    chat_client=client,
     instructions="You help staff check stock levels.",
     tools=[get_inventory],          # plain function — schema inferred
 )
@@ -4139,7 +4488,6 @@ for doc in client.recognize_pii_entities(
 | Pronunciation assessment | Audio → fluency and accuracy scores |
 
 ```python
-import os
 import azure.cognitiveservices.speech as speechsdk
 
 cfg = speechsdk.SpeechConfig(subscription=os.getenv("SPEECH_KEY"),
@@ -4413,18 +4761,16 @@ Document Intelligence, Content Understanding, and Azure AI Search. This domain a
 
 ```python
 import os
-from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
 
-client = DocumentIntelligenceClient(
+client = DocumentAnalysisClient(
     endpoint=os.getenv("DOCUMENT_INTELLIGENCE_ENDPOINT"),
     credential=AzureKeyCredential(os.getenv("DOCUMENT_INTELLIGENCE_KEY")),
 )
 
 with open("invoice.pdf", "rb") as f:                 # §0.4 binary mode
-    poller = client.begin_analyze_document(
-        "prebuilt-invoice", body=f, content_type="application/octet-stream"
-    )
+    poller = client.begin_analyze_document("prebuilt-invoice", document=f)
 
 result = poller.result()                             # §0.5 MUST call .result()
 
@@ -4639,6 +4985,88 @@ index_client.create_index(index)
 | **Security filters** | Trim results by user identity |
 
 > ⚡ **Scoring profiles** answer "recent documents should rank higher" or "matches in the title should outweigh matches in the body." **Security filters** answer "users must only see documents their group can access" — you store permitted group IDs on each document and filter by the caller's groups.
+
+---
+
+
+### §5.3.9 Agentic Retrieval and Knowledge Bases
+
+This is one of the most misunderstood Domain 5 topics — and one of the most likely to appear in exam scenarios.
+
+**The problem regular hybrid search doesn't solve:**
+
+Standard RAG works like this:
+```
+User: "Compare our refund policy for products vs services, and tell me
+       if there was a policy change in the last year"
+           ↓
+embed the whole question → one vector
+           ↓
+one search → top-5 chunks returned (mixture of all three sub-topics)
+           ↓
+LLM gets noisy, partial context → hallucinates or says "I don't know"
+```
+
+The issue: one embedding of a complex multi-part question is a vector that's a *blend* of all sub-topics. The search returns chunks that partially match everything but precisely answer nothing.
+
+**What Agentic Retrieval does differently:**
+
+```
+User: "Compare our refund policy for products vs services, and tell me
+       if there was a policy change in the last year"
+           ↓
+LLM READS the question and DECOMPOSES it:
+  Sub-query 1: "product refund policy"
+  Sub-query 2: "service refund policy"
+  Sub-query 3: "policy changes 2025 refund"
+           ↓
+THREE separate searches run against the knowledge base
+           ↓
+Results from all three are retrieved and synthesised
+           ↓
+One grounded, precise answer with citations
+```
+
+The LLM **orchestrates** the retrieval — it decides what to search for, how many searches to run, and how to combine the results. The index is the same Azure AI Search index; what changes is the reasoning layer above it.
+
+📊 **Regular AI Search RAG vs Agentic Retrieval**
+
+| | Regular RAG (hybrid+semantic) | Agentic Retrieval / Knowledge Base |
+|---|---|---|
+| Query strategy | One query per user message | LLM decomposes into multiple sub-queries |
+| Complex questions | Often fails (blended vector) | Handles well |
+| Latency | Lower | Higher (LLM + multiple searches) |
+| Control over retrieval | Full (your code) | LLM-driven |
+| Setup | Your indexer + search code | Configure a Knowledge Base in Foundry |
+| Best for | Known, predictable query patterns | Open-ended, conversational, multi-hop questions |
+
+> ⚡ **"A RAG chatbot works fine for simple questions but fails when users ask complex comparative or multi-part questions"** → The answer is **Agentic Retrieval / Knowledge Base**, not tuning hybrid search or semantic ranking. Those optimise a single retrieval step; they cannot decompose a question into sub-queries.
+
+> ⚡ **Exam naming:** In the April 2026 objectives this appears as "Agentic Retrieval" and "Knowledge Sources/Knowledge Bases." It was previously called "Knowledge Agents" — that name was retired. Both terms appear in exam materials; they refer to the same feature.
+
+**Setting it up in AI Foundry:**
+```
+ai.azure.com → Project → [your agent] → Knowledge tab
+→ Add knowledge source → choose Azure AI Search index
+→ The agent now uses agentic retrieval over that index automatically
+→ No explicit search code needed in your application
+```
+
+**Knowledge Source vs Knowledge Base:**
+- **Knowledge Source**: a single data connection (one AI Search index, one file store)
+- **Knowledge Base**: a collection of Knowledge Sources used together for retrieval
+
+One agent can have multiple knowledge sources grouped into a knowledge base, e.g. a product catalogue index + a policy documents index searched together.
+
+**When to use which:**
+
+| Scenario | Use |
+|----------|-----|
+| "Search our FAQ for relevant answers" (simple, predictable) | Regular AI Search + hybrid query |
+| "Answer complex questions about our policies" (multi-part, conversational) | Agentic Retrieval via Knowledge Base |
+| "Agent must answer questions spanning two separate document repositories" | Knowledge Base with two Knowledge Sources |
+| "Agent must access our existing custom-built search pipeline" | Custom function tool calling your search endpoint |
+
 
 ---
 
